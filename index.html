@@ -48,7 +48,7 @@
             color: red;
         }
         .key {
-            margin: 20px auto;
+            margin: 20px 0;
             text-align: left;
             max-width: 600px;
             background-color: #fff;
@@ -75,7 +75,6 @@
 <body>
     <h1>Crop Rotation Game</h1>
     <div class="key">
-        <h3>Crop Key:</h3>
         <h3>Crop Key:</h3>
         <p><strong>🌾 Wheat:</strong> -3 Fertility, +5 Food Production</p>
         <p><strong>🌽 Corn:</strong> -4 Fertility, +7 Food Production</p>
@@ -172,7 +171,7 @@
         }
 
         function updateSoilFertility(field, crop) {
-            return soilFertility[field] + fertilityImpact[crop];
+            return Math.min(soilFertility[field] + fertilityImpact[crop], maxFertility);
         }
 
         function calculateProduction(field, crop) {
