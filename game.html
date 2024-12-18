@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crop Rotation Game</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f8f9fa;
+            color: #333;
+            text-align: center;
+            margin: 0;
+            padding: 20px;
+        }
+        h1, h2, h3 {
+            margin-bottom: 10px;
+        }
+        table {
+            margin: 20px auto;
+            border-collapse: collapse;
+            width: 80%;
+        }
+        table, th, td {
+            border: 1px solid #ddd;
+        }
+        th, td {
+            padding: 10px;
+            text-align: center;
+        }
+        select {
+            padding: 5px;
+            font-size: 14px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            margin-top: 20px;
+        }
+        canvas {
+            width: 1000px !important;
+            height: 400px !important;
+            margin: 20px auto;
+        }
+        .emoji {
+            font-size: 1.2em;
+            color: red;
+        }
+        .key {
+            margin: 20px auto;
+            text-align: left;
+            max-width: 600px;
+            background-color: #fff;
+            border: 1px solid #ccc;
+            padding: 10px;
+            box-shadow: 0px 0px 5px rgba(0,0,0,0.1);
+        }
+        .key h3 { margin: 0; }
+        #log {
+            margin: 20px auto;
+            padding: 10px;
+            text-align: left;
+            background-color: #fff;
+            border: 1px solid #ddd;
+            max-width: 1000px;
+            height: 300px;
+            overflow-y: auto;
+        }
+        #log h3 {
+            margin: 0 0 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Crop Rotation Game</h1>
+    <div class="key">
+        <h3>Crop Key:</h3>
+        <h3>Crop Key:</h3>
+        <p><strong>🌾 Wheat:</strong> -3 Fertility, +5 Food Production</p>
+        <p><strong>🌽 Corn:</strong> -4 Fertility, +7 Food Production</p>
+        <p><strong>🫘 Soybean:</strong> -2 Fertility, +4 Food Production</p>
+        <p><strong>🌱 Fallow:</strong> +5 Fertility, 0 Food Production</p>
+        <p><span class="emoji">⚠️</span> Indicates a 25% production penalty due to zero fertility.</p>
+        <p><span class="emoji">❌</span> Zero production: crop would send fertility negative.</p>
+    </div>
+
+    <form id="crop-form">
+        <table>
+            <thead>
+                <tr>
+                    <th>Field</th>
+                    <th>Current Fertility</th>
+                    <th>Current Crop</th>
+                    <th>Select Crop</th>
+                </tr>
+            </thead>
+            <tbody id="fields-table"></tbody>
+        </table>
+        <button type="submit">Submit Year</button>
+    </form>
+
+    <h2 id="year-display">Year: 1 / 8</h2>
+    <h2 id="last-year-display">Last Year Production: 0</h2>
+    <h2 id="score-display">Total Production: 0</h2>
+    <h3>Fertility Chart</h3>
+    <canvas id="fertility-chart"></canvas>
+    <h3>Production Chart</h3>
+    <canvas id="production-chart"></canvas>
+    <div id="log">
+        <h3>Action Log:</h3>
+        <div id="log-content"></div>
+    </div>
+
+    <script>
+        const crops = ["🌾 Wheat", "🌽 Corn", "🫘 Soybean", "🌱 Fallow"];
+        const cropNames = { "🌾 Wheat": "Wheat", "🌽 Corn": "Corn", "🫘 Soybean": "Soybean", "🌱 Fallow": "Fallow" };
+        const fields = ["Field 1", "Field 2", "Field 3", "Field 4"];
+        const fertilityImpact = { "Wheat": -3, "Corn": -4, "Soybean": -2, "Fallow": +5 };
+        const productionValues = { "Wheat": 5, "Corn": 7, "Soybean": 4, "Fallow": 0 };
+        const maxFertility = 10;
+        let year = 1;
+        let gameOver = false;
+        let totalProduction = 0;
+        let lastYearProduction = 0;
+
+        let fieldHistory = fields.reduce((acc, field) => ({ ...acc, [field]: [] }), {});
+        let soilFertility = fields.reduce((acc, field) => ({ ...acc, [field]: maxFertility }), {});
+        let productionData = fields.reduce((acc, field) => ({ ...acc, [field]: [] }), {});
+        let fieldProduction = fields.reduce((acc, field) => ({ ...acc, [field]: [] }), {});
+
+        const fertilityCtx = document.getElementById('fertility-chart').getContext('2d');
+        const productionCtx = document.getElementById('production-chart').getContext('2d');
+        const logContent = document.getElementById('log-content');
+
+        const fertilityChart = new Chart(fertilityCtx, {
+            type: 'line',
+            data: { labels: [], datasets: [] },
+            options: { responsive: true, scales: { y: { beginAtZero: true, max: 10 } } }
+        });
+
+        const productionChart = new Chart(productionCtx, {
+            type: 'line',
+            data: { labels: [], datasets: [] },
+            options: { responsive: true, scales: { y: { beginAtZero: true } } }
+        });
+
+        function logAction(message) {
+            logContent.innerHTML += `<p>${message}</p>`;
+            logContent.scrollTop = logContent.scrollHeight;
+        }
+
+        function renderFields() {
+            const tableBody = document.getElementById("fields-table");
+            tableBody.innerHTML = "";
+            fields.forEach((field) => {
+                const currentCrop = fieldHistory[field][fieldHistory[field].length - 1] || "None";
+                const penaltyEmoji = soilFertility[field] === 0 ? '<span class="emoji">⚠️</span>' : "";
+                tableBody.innerHTML += `
+                    <tr>
+                        <td>${field} ${penaltyEmoji}</td>
+                        <td>${soilFertility[field]}</td>
+                        <td>${currentCrop}</td>
+                        <td>
+                            <select name="${field}" required>
+                                ${crops.map(crop => `<option value="${cropNames[crop]}">${crop}</option>`).join("")}
+                            </select>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+
+        function updateSoilFertility(field, crop) {
+            return soilFertility[field] + fertilityImpact[crop];
+        }
+
+        function calculateProduction(field, crop) {
+            if (updateSoilFertility(field, crop) < 0) {
+                logAction(`${field}: Zero production as fertility would go negative.`);
+                return 0;
+            }
+            let baseProduction = productionValues[crop];
+            if (soilFertility[field] === 0) {
+                baseProduction *= 0.75; // Apply penalty for zero fertility
+            }
+            return baseProduction;
+        }
+
+        function updateCharts() {
+            fertilityChart.data.labels.push(`Year ${year}`);
+            productionChart.data.labels.push(`Year ${year}`);
+
+            fertilityChart.data.datasets = fields.map(field => ({
+                label: `${field} Fertility`,
+                data: productionData[field],
+                fill: false,
+                borderWidth: 2,
+            }));
+
+            productionChart.data.datasets = fields.map(field => ({
+                label: `${field} Production`,
+                data: fieldProduction[field],
+                fill: false,
+                borderWidth: 2,
+            }));
+
+            fertilityChart.update();
+            productionChart.update();
+        }
+
+        function handleSubmit(event) {
+            event.preventDefault();
+            let yearlyProduction = 0;
+            const formData = new FormData(event.target);
+            fields.forEach((field) => {
+                const cropChoice = formData.get(field);
+                const predictedFertility = updateSoilFertility(field, cropChoice);
+                const production = calculateProduction(field, cropChoice);
+                yearlyProduction += production;
+                productionData[field].push(soilFertility[field]);
+                fieldProduction[field].push(production);
+                fieldHistory[field].push(cropChoice);
+                logAction(`${field} planted with ${cropChoice} (Production: ${production.toFixed(2)})`);
+                if (predictedFertility >= 0) soilFertility[field] = predictedFertility;
+            });
+            totalProduction += yearlyProduction;
+            lastYearProduction = yearlyProduction;
+
+            if (yearlyProduction < 6) {
+                alert("Game Over! Production fell below 6. You have failed.");
+                logAction("Game Over: Yearly production fell below 6.");
+                gameOver = true;
+                return;
+            }
+
+            updateCharts();
+            document.getElementById("last-year-display").innerText = `Last Year Production: ${lastYearProduction.toFixed(2)}`;
+            document.getElementById("score-display").innerText = `Total Production: ${totalProduction.toFixed(2)}`;
+            year++;
+
+            if (year > 8) {
+                renderFinalState();
+            } else {
+                document.getElementById("year-display").innerText = `Year: ${year} / 8`;
+                renderFields();
+            }
+        }
+
+        function renderFinalState() {
+            logAction(`Game Over! Total food production: ${totalProduction.toFixed(2)}`);
+            alert(`Game Over! Your total food production score: ${totalProduction.toFixed(2)}`);
+        }
+
+        document.getElementById("crop-form").addEventListener("submit", handleSubmit);
+        renderFields();
+    </script>
+</body>
+</html>
